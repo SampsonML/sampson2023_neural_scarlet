@@ -167,7 +167,7 @@ def flux_comparison(seed, max_n_sources, stamp_size=12, max_shift=2, spec_weight
         return jnp.log(x + 1) / sigma_y
 
     keys = random.split(random.PRNGKey(0), 2)
-    spec_step = partial(relative_step, factor=1e-2)
+    spec_step = partial(relative_step, factor=2e-2)
     morph_step = partial(relative_step, factor=1e-1)
     with Scene(model_frame) as scene:
         for i in range(len( centers )):
@@ -185,7 +185,7 @@ def flux_comparison(seed, max_n_sources, stamp_size=12, max_shift=2, spec_weight
             )
             
     # now fit the model
-    scene_fitted = scene.fit(obs, max_iter=200, e_rel=2e-4);
+    scene_fitted = scene.fit(obs, max_iter=200, e_rel=1.5e-4);
     renders = obs.render(scene_fitted())
 
     def get_extent(bbox):
@@ -202,22 +202,22 @@ def flux_comparison(seed, max_n_sources, stamp_size=12, max_shift=2, spec_weight
     scarlets = deblended_scarlet1[:,band_idx,:,:]
 
     # initialise residuals
-    resid_1 = np.zeros(truths.shape[0])
-    resid_2 = np.zeros(truths.shape[0])
-    true_flux = np.zeros(truths.shape[0])
-    corr_1 = np.zeros(truths.shape[0])
-    corr_2 = np.zeros(truths.shape[0])
+    resid_1     = np.zeros(truths.shape[0])
+    resid_2     = np.zeros(truths.shape[0])
+    true_flux   = np.zeros(truths.shape[0])
+    corr_1      = np.zeros(truths.shape[0])
+    corr_2      = np.zeros(truths.shape[0])
+    blendedness = np.zeros(truths.shape[0])
 
     for i in range(truths.shape[0]):
         resid_1_tmp    = 0
         resid_2_tmp    = 0
-        true_flux_tmp  = 0
-        
-        corr_1_tmp    = 0
-        corr_2_tmp    = 0
+        true_flux_tmp  = 0 
+        corr_1_tmp     = 0
+        corr_2_tmp     = 0
         
         for j in range(band):
-            band_idx = 1
+            band_idx = j #band # user selected
             truths = blend_batch.isolated_images[:, :, band_idx][0]
             scarlets = deblended_scarlet1[:,band_idx,:,:]
             scarlet1_spec = np.array(sources[i].parameters[0])
@@ -243,122 +243,154 @@ def flux_comparison(seed, max_n_sources, stamp_size=12, max_shift=2, spec_weight
             pad_y_high = np.abs(np.min([0, extent_render[3] - extent[3]])) -1
             test = np.pad(small_image, [(pad_y_low, pad_y_high), (pad_x_low, pad_x_high)], mode='constant', constant_values=0)
 
-            resid_1_tmp    = np.sum(scarlets[i] - truths[i])
-            resid_2_tmp    = np.sum(test - truths[i])
-            true_flux_tmp  = np.sum((truths[i]))
+            resid_1_tmp    += np.sum(scarlets[i] - truths[i]) / np.sum(truths[i])
+            resid_2_tmp    += np.sum(test - truths[i]) / np.sum(truths[i])
+            true_flux_tmp  += np.sum((truths[i]))
             
-            corr_1_tmp    = np.dot(truths[i].flatten(), scarlets[i].flatten()) / np.dot(np.sqrt(np.dot(truths[i].flatten(), truths[i].flatten())) , np.sqrt(np.dot(scarlets[i].flatten(), scarlets[i].flatten())))
-            corr_2_tmp    = np.dot(truths[i].flatten(), test.flatten()) / np.dot(np.sqrt(np.dot(truths[i].flatten(), truths[i].flatten())) , np.sqrt(np.dot(test.flatten(), test.flatten())))
+            corr_1_tmp    += np.dot(truths[i].flatten(), scarlets[i].flatten()) / np.dot(np.sqrt(np.dot(truths[i].flatten(), truths[i].flatten())) , np.sqrt(np.dot(scarlets[i].flatten(), scarlets[i].flatten())))
+            corr_2_tmp    += np.dot(truths[i].flatten(), test.flatten()) / np.dot(np.sqrt(np.dot(truths[i].flatten(), truths[i].flatten())) , np.sqrt(np.dot(test.flatten(), test.flatten())))
 
         
             
-        resid_1[i]   = resid_1_tmp
-        resid_2[i]   = resid_2_tmp
-        true_flux[i] = true_flux_tmp
+        resid_1[i]   = resid_1_tmp / band
+        resid_2[i]   = resid_2_tmp / band
+        true_flux[i] = true_flux_tmp / band
+        corr_1[i]   = corr_1_tmp / band
+        corr_2[i]   = corr_2_tmp / band
         
-        corr_1[i]   = corr_1_tmp
-        corr_2[i]   = corr_2_tmp
+    
+    S_all = np.sum(true_flux,axis=0)
+    for i in range(truths.shape[0]):
+        blendedness[i] = 1 - (np.dot(true_flux[i].flatten(), true_flux[i].flatten())) / np.dot(S_all.flatten(), true_flux[i].flatten())
         
+
         #spec1 = np.dot(truths[i].flatten(), scarlets[i].flatten()) / np.dot(np.sqrt(np.dot(truths[i].flatten(), truths[i].flatten())) , np.sqrt(np.dot(scarlets[i].flatten(), scarlets[i].flatten())))
         #spec2 = 
         
         
         
-    return resid_1, resid_2, true_flux, corr_1, corr_2 
+    return resid_1, resid_2, true_flux, corr_1, corr_2, blendedness
 
 
-max_n_sources = [6, 7, 8]
+batch_num     = 1
 stamp_size    = 24
-num_trials    = 10
+num_trials    = 100 
 seed          = np.linspace(1,num_trials,num_trials) 
-max_shift     = 2.4
+max_shift     = 8
 spec_weight   = 1
 
 resid_scarlet_1 = []
 resid_scarlet_2 = []
 true_flux_all   = []
+blendedness_all = []
 
 corr_scarlet_1 = []
 corr_scarlet_2 = []
 
 import os
-#os.system('clear')
 
 for seed_n in seed:
-    n_sources = 6
+    n_sources = int(np.random.randint(2,6,1)) # take random source count between 2 and 6
     try:
-        resid_1, resid_2, true_flux, corr1, corr2 =  flux_comparison(int(seed_n), 
+        resid_1, resid_2, true_flux, corr1, corr2, blendedness =  flux_comparison(int(seed_n), 
                                                        n_sources, 
                                                        stamp_size, 
                                                        max_shift,
                                                        spec_weight,
-                                                       band=1)
+                                                       band=5)
         
         resid_scarlet_1 = np.append(resid_scarlet_1, resid_1)
         resid_scarlet_2 = np.append(resid_scarlet_2, resid_2)
         true_flux_all = np.append(true_flux_all, true_flux)
+        blendedness_all = np.append(blendedness_all, blendedness)
         corr_scarlet_1 = np.append(corr_scarlet_1, corr1)
         corr_scarlet_2 = np.append(corr_scarlet_2, corr2)
     except:
         print(f'failed at seed {seed_n}')
-    #clear_output(wait=True)
     os.system('clear')
     print(f'finished trial: {int(seed_n)} / {int(seed[-1])}')
 
 
 from scipy.stats import gaussian_kde
 # Calculate the point density
+b = blendedness_all
 x = np.log10(true_flux_all)
-y = resid_scarlet_1 / true_flux_all
+y = resid_scarlet_1 
 mask = ~np.isnan(y)
 x = x[mask]
 y = y[mask]
+b1 = b[mask]
+by = np.vstack([b1,y])
 xy = np.vstack([x,y])
 z1 = gaussian_kde(xy)(xy)
+bz1 = gaussian_kde(by)(by)
+
 
 x2 = np.log10(true_flux_all)
-y2 = resid_scarlet_2 / true_flux_all
+y2 = resid_scarlet_2 
 mask = ~np.isnan(y2)
 x2 = x2[mask]
 y2 = y2[mask]
+b2 = b[mask]
+by2 = np.vstack([b2,y2])
 xy = np.vstack([x2,y2])
 z2 = gaussian_kde(xy)(xy)
+bz2 = gaussian_kde(by2)(by2)
+min_z1 = np.min([np.min(z1) , np.min(z2)])
+max_z1 = np.max([np.max(z1) , np.max(z2)])
+min_bz1 = np.min([np.min(bz1) , np.min(bz2)])
+max_bz1 = np.max([np.max(bz1) , np.max(bz2)])
+
 
 x3 = np.log10(true_flux_all)
 y3 = corr_scarlet_1
-mask = ~np.isnan(y2)
+mask = ~np.isnan(y3)
 x3 = x3[mask]
 y3 = y3[mask]
+b3 = b[mask]
+by3 = np.vstack([b3,y3])
 xy = np.vstack([x3,y3])
 z3 = gaussian_kde(xy)(xy)
+bz3 = gaussian_kde(by3)(by3)
 
 x4 = np.log10(true_flux_all)
 y4 = corr_scarlet_2
 mask = ~np.isnan(y4)
 x4 = x4[mask]
 y4 = y4[mask]
+b4 = b[mask]
+by4 = np.vstack([b4,y4])
 xy = np.vstack([x4,y4])
 z4 = gaussian_kde(xy)(xy)
-
+bz4 = gaussian_kde(by4)(by4)
+min_z2 = np.min([np.min(z3) , np.min(z4)])
+max_z2 = np.max([np.max(z3) , np.max(z4)])
+min_bz2 = np.min([np.min(bz3) , np.min(bz4)])
+max_bz2 = np.max([np.max(bz3) , np.max(bz4)])
 
 fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(13, 13),dpi=100)
 cMAP = 'cmr.iceburn'
-m_size = 20
+m_size = 14
+low_x = 3.7
+hi_x = 6.7
 
 plt.subplot(2,2,1)
 plt.scatter(x, y, 
-            c = z1, 
+            c = z1,
+            vmin=min_z1,
+            vmax=max_z1,
             cmap=cMAP,
             s=m_size,
             alpha=0.95,
+            rasterized=True,
             label = r'$\textsc{Scarlet}2$')
 #plt.hist2d(x, y, bins=200, cmap='cmr.iceburn', density=False)
 plt.hlines(0, -100, 100, color='r', linestyle='--',linewidth=2.5)
-plt.xlim(0.95 * np.min(np.log10(true_flux_all)), 1.05 * np.max(np.log10(true_flux_all)))
+plt.xlim(low_x, hi_x)
 plt.ylim(-.75, .75)
 plt.xticks(fontsize=0)
 plt.yticks(fontsize=14)
-plt.text(5.5, 0.6, r'$\textsc{Scarlet}1$', fontsize=21, color='k')
+plt.text(5.75, 0.6, r'$\textsc{Scarlet}1$', fontsize=21, color='k')
 #plt.xlabel(r'$\log_{10}$(true flux)',fontsize=25)
 plt.ylabel('(model - true) / true',fontsize=25)
 
@@ -366,14 +398,17 @@ plt.ylabel('(model - true) / true',fontsize=25)
 plt.subplot(2,2,2)
 im1 = plt.scatter(x2, y2, 
             c = z2, 
+            vmin=min_z1,
+            vmax=max_z1,
             cmap=cMAP,
             s=m_size,
             alpha=0.95,
+            rasterized=True,
             label = r'$\textsc{Scarlet}2$')
 plt.hlines(0, -100, 100, color='r', linestyle='--',linewidth=2.5)
 plt.ylim(-.75, .75)
-plt.text(5.5, 0.6, r'$\textsc{Scarlet}2$', fontsize=21, color='k')
-plt.xlim(0.95 * np.min(np.log10(true_flux_all)), 1.05 * np.max(np.log10(true_flux_all)))
+plt.text(5.75, 0.6, r'$\textsc{Scarlet}2$', fontsize=21, color='k')
+plt.xlim(low_x, hi_x)
 plt.xticks(fontsize=0)
 plt.yticks(fontsize=0)
 #plt.xlabel(r'$\log_{10}$(true flux)',fontsize=25)
@@ -382,12 +417,15 @@ plt.subplot(2,2,3)
 plt.hlines(1, -100, 100, color='r', linestyle='--',linewidth=2.5)
 plt.scatter(x3, y3, 
             c = z3, 
+            vmin=min_z2,
+            vmax=max_z2,
             cmap=cMAP,
             s=m_size,
             alpha=0.95,
+            rasterized=True,
             label = r'$\textsc{Scarlet}2$')
-plt.xlim(0.95 * np.min(np.log10(true_flux_all)), 1.05 * np.max(np.log10(true_flux_all)))
-plt.ylim(.5, 1.1)
+plt.xlim(low_x, hi_x)
+plt.ylim(.65, 1.1)
 plt.xticks(fontsize=14)
 plt.yticks(fontsize=14)
 plt.xlabel(r'$\log_{10}$(true flux)',fontsize=24)
@@ -400,12 +438,15 @@ plt.yticks(fontsize=0)
 plt.xticks(fontsize=14)
 im = plt.scatter(x4, y4, 
             c = z4, 
+            vmin=min_z2,
+            vmax=max_z2,
             cmap=cMAP,
             s=m_size,
             alpha=0.95,
+            rasterized=True,
             label = r'$\textsc{Scarlet}2$')
-plt.ylim(.5, 1.1)
-plt.xlim(0.95 * np.min(np.log10(true_flux_all)), 1.05 * np.max(np.log10(true_flux_all)))
+plt.ylim(.65, 1.1)
+plt.xlim(low_x, hi_x)
 plt.xlabel(r'$\log_{10}$(true flux)',fontsize=24)
 
 plt.subplots_adjust(wspace=.0, hspace=.05)
@@ -418,36 +459,143 @@ cbar_ax2 = fig.add_axes([0.9, 0.504, 0.02, 0.376])
 cbar2 = plt.colorbar(im1, cax=cbar_ax2)
 cbar2.set_label(r'number of sources',fontsize=24)
 
-plt.savefig('flux_comparison_1000_alt.pdf', bbox_inches='tight',dpi=200)
-plt.savefig('flux_comparison_1000_alt.png', bbox_inches='tight',dpi=200)
-
-name = 'flux_comparison_plot' + str(num_trials) + '.pdf'
-name2 = 'flux_comparison_plot' + str(num_trials) + '.png'
+name = 'flux_comparison_plot_specWeight_' + str(spec_weight) + '_nTrials_' + str(num_trials) + '.pdf'
+name2 = 'flux_comparison_plot_specWeight_' + str(spec_weight) +'_nTrials_' + str(num_trials) + '.png'
 plt.savefig(name, bbox_inches='tight',dpi=200)
 plt.savefig(name2, bbox_inches='tight',dpi=200)
 
 PREFIX = '/Users/mattsampson/Research/Melchior/scarlet_development/'
-NAME   = 'flux_test_' + str(num_trials) + '_'
-SUFFIX =  str(num_trials) + '.npy'
-np.save(PREFIX + NAME + 'x' + SUFFIX, x, allow_pickle=True)
-np.save(PREFIX + NAME + 'y' + SUFFIX, y , allow_pickle=True)
-np.save(PREFIX + NAME + 'x2' + SUFFIX, x2, allow_pickle=True)
-np.save(PREFIX + NAME + 'y2' + SUFFIX, y2 , allow_pickle=True)
-np.save(PREFIX + NAME + 'x3' + SUFFIX, x3, allow_pickle=True)
-np.save(PREFIX + NAME + 'y3' + SUFFIX, y3 , allow_pickle=True)
-np.save(PREFIX + NAME + 'x4' + SUFFIX, x4, allow_pickle=True)
-np.save(PREFIX + NAME + 'y4' + SUFFIX, y4 , allow_pickle=True)
+NAME   = 'metrics_batch_' + str(batch_num) + 'specWeight_'+ str(spec_weight) + '_nTrials_' + str(num_trials)
+
+np.save(PREFIX + NAME + 'x.npy', x, allow_pickle=True)
+np.save(PREFIX + NAME + 'y.npy', y , allow_pickle=True)
+np.save(PREFIX + NAME + 'z1.npy', z1, allow_pickle=True)
+np.save(PREFIX + NAME + 'bz1.npy', bz1, allow_pickle=True)
+np.save(PREFIX + NAME + 'x2.npy', x2, allow_pickle=True)
+np.save(PREFIX + NAME + 'y2.npy', y2 , allow_pickle=True)
+np.save(PREFIX + NAME + 'z2.npy', z2, allow_pickle=True)
+np.save(PREFIX + NAME + 'bz2.npy', bz2, allow_pickle=True)
+np.save(PREFIX + NAME + 'x3.npy', x3, allow_pickle=True)
+np.save(PREFIX + NAME + 'y3.npy', y3 , allow_pickle=True)
+np.save(PREFIX + NAME + 'z3.npy', z3, allow_pickle=True)
+np.save(PREFIX + NAME + 'bz3.npy', bz3, allow_pickle=True)
+np.save(PREFIX + NAME + 'x4.npy', x4, allow_pickle=True)
+np.save(PREFIX + NAME + 'y4.npy', y4 , allow_pickle=True)
+np.save(PREFIX + NAME + 'z4.npy', z4, allow_pickle=True)
+np.save(PREFIX + NAME + 'bz4.npy', bz4, allow_pickle=True)
+
+fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(13, 13),dpi=100)
+cMAP = 'cmr.iceburn'
+m_size = 20
+low_x = -0.05
+hi_x = 1.05
+
+plt.subplot(2,2,1)
+plt.scatter(b1, y, 
+            c = bz1, 
+            vmin=min_bz1,
+            vmax=max_bz1,
+            cmap=cMAP,
+            s=m_size,
+            alpha=0.95,
+            rasterized=True,
+            label = r'$\textsc{Scarlet}2$')
+#plt.hist2d(x, y, bins=200, cmap='cmr.iceburn', density=False)
+plt.hlines(0, -100, 100, color='r', linestyle='--',linewidth=2.5)
+plt.xlim(low_x, hi_x)
+plt.ylim(-.75, .75)
+plt.xticks(fontsize=0)
+plt.yticks(fontsize=14)
+plt.text(0.05, 0.6, r'$\textsc{Scarlet}1$', fontsize=21, color='k')
+#plt.xlabel(r'$\log_{10}$(true flux)',fontsize=25)
+plt.ylabel('(model - true) / true',fontsize=25)
+
+# now scarlet 2
+plt.subplot(2,2,2)
+im1 = plt.scatter(b2, y2, 
+            c = bz2, 
+            vmin=min_bz1,
+            vmax=max_bz1,
+            cmap=cMAP,
+            s=m_size,
+            alpha=0.95,
+            rasterized=True,
+            label = r'$\textsc{Scarlet}2$')
+plt.hlines(0, -100, 100, color='r', linestyle='--',linewidth=2.5)
+plt.ylim(-.75, .75)
+plt.text(0.05, 0.6, r'$\textsc{Scarlet}2$', fontsize=21, color='k')
+plt.xlim(low_x, hi_x)
+plt.xticks(fontsize=0)
+plt.yticks(fontsize=0)
+#plt.xlabel(r'$\log_{10}$(true flux)',fontsize=25)
+
+plt.subplot(2,2,3)
+plt.hlines(1, -100, 100, color='r', linestyle='--',linewidth=2.5)
+plt.scatter(b3, y3, 
+            c = bz3, 
+            vmin=min_bz2,
+            vmax=max_bz2,
+            cmap=cMAP,
+            s=m_size,
+            alpha=0.95,
+            rasterized=True,
+            label = r'$\textsc{Scarlet}2$')
+plt.xlim(low_x, hi_x)
+plt.ylim(.65, 1.1)
+plt.xticks(fontsize=14)
+plt.yticks(fontsize=14)
+plt.xlabel(r'blendedness',fontsize=24)
+plt.ylabel('morphology correlation',fontsize=24)
+
+# now scarlet 2
+plt.subplot(2,2,4)
+plt.hlines(1, -100, 100, color='r', linestyle='--',linewidth=2.5)
+plt.yticks(fontsize=0)
+plt.xticks(fontsize=14)
+im = plt.scatter(b4, y4, 
+            c = bz4, 
+            vmin=min_bz2,
+            vmax=max_bz2,
+            cmap=cMAP,
+            s=m_size,
+            alpha=0.95,
+            rasterized=True,
+            label = r'$\textsc{Scarlet}2$')
+plt.ylim(.65, 1.1)
+plt.xlim(low_x, hi_x)
+plt.xlabel(r'blendedness',fontsize=24)
+
+plt.subplots_adjust(wspace=.0, hspace=.05)
+#plt.colorbar(im, orientation="vertical",fraction=0.07,anchor=(5.0,0.0))
+cbar_ax = fig.add_axes([0.9, 0.11, 0.02, 0.3755])
+cbar = plt.colorbar(im, cax=cbar_ax)
+cbar.set_label(r'number of sources',fontsize=24)
+
+cbar_ax2 = fig.add_axes([0.9, 0.504, 0.02, 0.376])
+cbar2 = plt.colorbar(im1, cax=cbar_ax2)
+cbar2.set_label(r'number of sources',fontsize=24)
+
+name = 'flux_comparison_blended_specWeight_' + str(spec_weight) + '_nTrials_' + str(num_trials) + '.pdf'
+name2 = 'flux_comparison_blended_specWeight_' + str(spec_weight) +'_nTrials_' + str(num_trials) + '.png'
+plt.savefig(name, bbox_inches='tight',dpi=200)
+plt.savefig(name2, bbox_inches='tight',dpi=200)
+
+
 
 loaded = True
 if loaded:
-    x = np.load(PREFIX + NAME + 'x' + SUFFIX)
-    y = np.load(PREFIX + NAME + 'y' + SUFFIX)
-    x2 = np.load(PREFIX + NAME + 'x2' + SUFFIX)
-    y2 = np.load(PREFIX + NAME + 'y2' + SUFFIX)
-    x3 = np.load(PREFIX + NAME + 'x3' + SUFFIX)
-    y3 = np.load(PREFIX + NAME + 'y3' + SUFFIX)
-    x4 = np.load(PREFIX + NAME + 'x4' + SUFFIX)
-    y4 = np.load(PREFIX + NAME + 'y4' + SUFFIX)
+    x = np.load(PREFIX + NAME + 'x.npy')
+    y = np.load(PREFIX + NAME + 'y.npy')
+    z1 = np.load(PREFIX + NAME + 'z1.npy')
+    x2 = np.load(PREFIX + NAME + 'x2.npy')
+    y2 = np.load(PREFIX + NAME + 'y2.npy')
+    z2 = np.load(PREFIX + NAME + 'z2.npy')
+    x3 = np.load(PREFIX + NAME + 'x3.npy')
+    y3 = np.load(PREFIX + NAME + 'y3.npy')
+    z3 = np.load(PREFIX + NAME + 'z3.npy')
+    x4 = np.load(PREFIX + NAME + 'x4.npy')
+    y4 = np.load(PREFIX + NAME + 'y4.npy')
+    z4 = np.load(PREFIX + NAME + 'z4.npy')
 
 fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(13, 13),dpi=100)
 cMAP = 'cmr.iceburn'
@@ -459,10 +607,11 @@ plt.scatter(x, y,
             cmap=cMAP,
             s=m_size,
             alpha=0.95,
+            rasterized=True,
             label = r'$\textsc{Scarlet}2$')
 #plt.hist2d(x, y, bins=200, cmap='cmr.iceburn', density=False)
 plt.hlines(0, -100, 100, color='r', linestyle='--',linewidth=2.5)
-plt.xlim(0.95 * np.min(np.log10(true_flux_all)), 1.05 * np.max(np.log10(true_flux_all)))
+plt.xlim(2.5, 1.05 * np.max(np.log10(true_flux_all)))
 plt.ylim(-.75, .75)
 plt.xticks(fontsize=0)
 plt.yticks(fontsize=14)
@@ -477,11 +626,12 @@ im1 = plt.scatter(x2, y2,
             cmap=cMAP,
             s=m_size,
             alpha=0.95,
+            rasterized=True,
             label = r'$\textsc{Scarlet}2$')
 plt.hlines(0, -100, 100, color='r', linestyle='--',linewidth=2.5)
 plt.ylim(-.75, .75)
 plt.text(5.1, 0.6, r'$\textsc{Scarlet}2$', fontsize=21, color='k')
-plt.xlim(0.95 * np.min(np.log10(true_flux_all)), 1.05 * np.max(np.log10(true_flux_all)))
+plt.xlim(2.5, 1.05 * np.max(np.log10(true_flux_all)))
 plt.xticks(fontsize=0)
 plt.yticks(fontsize=0)
 #plt.xlabel(r'$\log_{10}$(true flux)',fontsize=25)
@@ -493,8 +643,9 @@ plt.scatter(x3, y3,
             cmap=cMAP,
             s=m_size,
             alpha=0.95,
+            rasterized=True,
             label = r'$\textsc{Scarlet}2$')
-plt.xlim(0.95 * np.min(np.log10(true_flux_all)), 1.05 * np.max(np.log10(true_flux_all)))
+plt.xlim(2.5, 1.05 * np.max(np.log10(true_flux_all)))
 plt.ylim(.5, 1.1)
 plt.xticks(fontsize=14)
 plt.yticks(fontsize=14)
@@ -511,9 +662,10 @@ im = plt.scatter(x4, y4,
             cmap=cMAP,
             s=m_size,
             alpha=0.95,
+            rasterized=True,
             label = r'$\textsc{Scarlet}2$')
 plt.ylim(.5, 1.1)
-plt.xlim(0.95 * np.min(np.log10(true_flux_all)), 1.05 * np.max(np.log10(true_flux_all)))
+plt.xlim(2.5, 1.05 * np.max(np.log10(true_flux_all)))
 plt.xlabel(r'$\log_{10}$(true flux)',fontsize=24)
 
 plt.subplots_adjust(wspace=.0, hspace=.05)
