@@ -61,8 +61,9 @@ def flux_comparison(seed, max_n_sources, stamp_size=12, max_shift=2, spec_weight
         stamp_size=stamp_size, 
         max_shift=max_shift, # shift is only 2 arcsecs = 10 pixels, which means blends are likely.
         min_mag = -np.inf, max_mag = 27, # magnitude range of the galaxies
+        #min_mag = 1, max_mag = 27, # magnitude range of the galaxies
         seed = seed)
-    LSST = btk.survey.get_surveys('LSST')
+    LSST = btk.survey.get_surveys('LSST')  # CHANGE THIS BACK
 
     batch_size = 1
 
@@ -136,7 +137,7 @@ def flux_comparison(seed, max_n_sources, stamp_size=12, max_shift=2, spec_weight
     
     # time this if desired
     st = time.time()
-    it, logL = blend.fit(200, e_rel=1e-3)
+    it, logL = blend.fit(150, e_rel=1e-4)
     et = time.time()
     time1 = (et - st) / max_n_sources
 
@@ -160,6 +161,28 @@ def flux_comparison(seed, max_n_sources, stamp_size=12, max_shift=2, spec_weight
     x_centers = blend_batch.catalog_list[0]["x_peak"]
     y_centers = blend_batch.catalog_list[0]["y_peak"]
     centers = np.stack([y_centers, x_centers], axis=1)
+    
+    # saving output for charlotte testing
+    #np.save('spec_init_src1.npy', spec_init, allow_pickle=True)
+    #np.save('morph_init_src1.npy', morph_init, allow_pickle=True)
+    #np.save('images_src1.npy', images, allow_pickle=True)
+    #np.save('weights_src1.npy', weights, allow_pickle=True)
+    #np.save('psf_src1.npy', psf, allow_pickle=True)
+    #np.save('centers_src1.npy', centers, allow_pickle=True)
+    
+    # np.save('spec_init_src5.npy', spec_init, allow_pickle=True)
+    # np.save('morph_init_src5.npy', morph_init, allow_pickle=True)
+    # np.save('images_src5.npy', images, allow_pickle=True)
+    # np.save('weights_src5.npy', weights, allow_pickle=True)
+    # np.save('psf_src5.npy', psf, allow_pickle=True)
+    # np.save('centers_src5.npy', centers, allow_pickle=True)
+    
+    # np.save('spec_init_src10.npy', spec_init, allow_pickle=True)
+    # np.save('morph_init_src10.npy', morph_init, allow_pickle=True)
+    # np.save('images_src10.npy', images, allow_pickle=True)
+    # np.save('weights_src10.npy', weights, allow_pickle=True)
+    # np.save('psf_src10.npy', psf, allow_pickle=True)
+    # np.save('centers_src10.npy', centers, allow_pickle=True)
 
     # box and center params
     model_frame = Frame(
@@ -176,7 +199,7 @@ def flux_comparison(seed, max_n_sources, stamp_size=12, max_shift=2, spec_weight
         sigma_y = 0.10
         return jnp.log(x + 1) / sigma_y
 
-    spec_step = partial(relative_step, factor=2e-2) # use 2e-2
+    spec_step = partial(relative_step, factor=1e-2) # use 2e-2
     with Scene(model_frame) as scene:
         for i in range(len( centers )):
             # define new prior here for each new model
@@ -195,7 +218,7 @@ def flux_comparison(seed, max_n_sources, stamp_size=12, max_shift=2, spec_weight
     # now fit the model
     # time this if desired
     st = time.time()
-    scene_fitted = scene.fit(obs, max_iter=150, e_rel=1e-3); # 1e-3 and 150
+    scene_fitted = scene.fit(obs, max_iter=150, e_rel=1e-4); # 1e-3 and 150
     et = time.time()
     time2 = (et - st) / max_n_sources
     renders = obs.render(scene_fitted())
@@ -317,10 +340,11 @@ def flux_comparison(seed, max_n_sources, stamp_size=12, max_shift=2, spec_weight
 # -------------------------------------- #
 batch_num       = 1
 stamp_size      = 24
-num_trials      = 1000
+num_trials      = 2000
 seed            = np.linspace(1,num_trials,num_trials)
-max_shift       = 6
+max_shift       = 5
 spec_weight     = 1
+n_bands         = 5
 resid_scarlet_1 = []
 resid_scarlet_2 = []
 true_flux_all   = []
@@ -335,6 +359,8 @@ time2_all       = []
 # --------------- #
 # run the trials  #
 # --------------- # 
+n_src = 1
+iters = 200
 for seed_n in seed:
     n_sources = int(np.random.randint(2,6,1)) # take random source count between 2 and 6
     try:
@@ -344,7 +370,7 @@ for seed_n in seed:
                                                                                                     stamp_size=stamp_size, 
                                                                                                     max_shift=max_shift,
                                                                                                     spec_weight=spec_weight,
-                                                                                                    band=5)
+                                                                                                    band=n_bands)
         
         resid_scarlet_1 = np.append(resid_scarlet_1, resid_1)
         resid_scarlet_2 = np.append(resid_scarlet_2, resid_2)
@@ -386,8 +412,12 @@ plt.savefig(name_time, bbox_inches='tight',dpi=200)
 plt.savefig(name_time2, bbox_inches='tight',dpi=200)
 
 print('-------------------------------------------')
-print(f'average time per source for scarlet1: {np.mean(time1_all):.2f}')
-print(f'average time per source for scarlet2: {np.mean(time2_all):.2f}')
+print(f'average time per iteration for scarlet1: {1e3 * np.mean(time1_all)* (n_src / iters):.5f}')
+print(f'average time per iteration for scarlet2: {1e3 * np.mean(time2_all)* (n_src / iters):.5f}')
+print(f'average time per source for scarlet1: {1e3 * np.mean(time1_all):.5f}')
+print(f'average time per source for scarlet2: {1e3 * np.mean(time2_all):.5f}')
+print(f'runtime per source for scarlet1: {1e3 * np.mean(time1_all)* n_src:.5f}')
+print(f'runtime per source for scarlet2: {1e3 * np.mean(time2_all)* n_src:.5f}')
 print(f'average time per source for scarlet2 is {np.mean(time2_all) / np.mean(time1_all):.2f} times slower than scarlet1')
 print('-------------------------------------------')
 print('making plots...')
@@ -398,7 +428,6 @@ print('making plots...')
 # ----------------------------- #
 # ----------------------------------------------------- #
 # masking so all arrays contain identical total sources #
-
 # ----------------------------------------------------- #
 b1 = blendedness_all
 x = np.log10(true_flux_all)
@@ -449,124 +478,47 @@ b5 = variable_list[14]
 x6 = variable_list[15]
 y6 = variable_list[16]
 b6 = variable_list[17]
-# panel 1
-# b = blendedness_all
-
-# mask = ~np.isnan(y)
-# x = x[mask]
-# y = y[mask]
-# b1 = b[mask]
-# mask = ~np.isinf(y)
-# x = x[mask]
-# y = y[mask]
-# b1 = b1[mask]
-by = np.vstack([b1,y])
-xy = np.vstack([x,y])
-z1 = gaussian_kde(xy)(xy)
-bz1 = gaussian_kde(by)(by)
-
-# panel 2
-# mask = ~np.isnan(y2)
-# x2 = x2[mask]
-# y2 = y2[mask]
-# b2 = b[mask]
-# mask = ~np.isinf(y2)
-# x2= x2[mask]
-# y2 = y2[mask]
-# b2 = b2[mask]
-by2 = np.vstack([b2,y2])
-xy = np.vstack([x2,y2])
-z2 = gaussian_kde(xy)(xy)
-bz2 = gaussian_kde(by2)(by2)
-min_z1 = np.min([np.min(z1) , np.min(z2)])
-max_z1 = np.max([np.max(z1) , np.max(z2)])
-min_bz1 = np.min([np.min(bz1) , np.min(bz2)])
-max_bz1 = np.max([np.max(bz1) , np.max(bz2)])
-
-# panel 3 morphology correlation scarlet 1 
-# mask = ~np.isnan(y3)
-# x3 = x3[mask]
-# y3 = y3[mask]
-# b3 = b[mask]
-# mask = ~np.isinf(y3)
-# x3 = x3[mask]
-# y3 = y3[mask]
-# b3 = b3[mask]
-by3 = np.vstack([b3,y3])
-xy = np.vstack([x3,y3])
-z3 = gaussian_kde(xy)(xy)
-bz3 = gaussian_kde(by3)(by3)
-
-# panel 4 morphology correlation scarlet 2
-# mask = ~np.isnan(y4)
-# x4 = x4[mask]
-# y4 = y4[mask]
-# b4 = b[mask]
-# mask = ~np.isinf(y4)
-# x4 = x4[mask]
-# y4 = y4[mask]
-# b4 = b4[mask]
-by4 = np.vstack([b4,y4])
-xy = np.vstack([x4,y4])
-z4 = gaussian_kde(xy)(xy)
-bz4 = gaussian_kde(by4)(by4)
-min_z2 = np.min([np.min(z3) , np.min(z4)])
-max_z2 = np.max([np.max(z3) , np.max(z4)])
-min_bz2 = np.min([np.min(bz3) , np.min(bz4)])
-max_bz2 = np.max([np.max(bz3) , np.max(bz4)])
-
-# panel 5 SED correlation scarlet 1
-# mask = ~np.isnan(y5)
-# x5 = x5[mask]
-# y5 = y5[mask]
-# b5 = b[mask]
-# mask = ~np.isinf(y5)
-# x5 = x5[mask]
-# y5 = y5[mask]
-# b5 = b5[mask]
-by5 = np.vstack([b5,y5])
-xy = np.vstack([x5,y5])
-z5 = gaussian_kde(xy)(xy)
-bz5 = gaussian_kde(by5)(by5)
-
-# panel 6 SED correlation scarlet 2
-# mask = ~np.isnan(y6)
-# x6 = x6[mask]
-# y6 = y6[mask]
-# b6 = b[mask]
-# mask = ~np.isinf(y6)
-# x6 = x6[mask]
-# y6 = y6[mask]
-# b6 = b6[mask]
-by6 = np.vstack([b6,y6])
-xy = np.vstack([x6,y6])
-z6 = gaussian_kde(xy)(xy)
-bz6 = gaussian_kde(by6)(by6)
-min_z3 = np.min([np.min(z5) , np.min(z6)])
-max_z3 = np.max([np.max(z5) , np.max(z6)])
-min_bz3 = np.min([np.min(bz5) , np.min(bz6)])
-max_bz3 = np.max([np.max(bz5) , np.max(bz6)])
 
 # ------------------------------------------------ #
 # plot 1: error metrics as a function of true flux #
 # ------------------------------------------------ #
-fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(12, 15),dpi=100)
-cMAP = 'cmr.iceburn'
-m_size = 14
+cMAP = cmr.get_sub_cmap("cmr.chroma", 0.0, 0.9)#'cmr.chroma'
+m_size = 10
 low_x = 3.5
 hi_x = 6.7
+bins = 70
+# range for hists
+range_1 = np.array([[low_x, hi_x], [-0.82, 0.82]])
+range_2 = np.array([[low_x, hi_x], [0.7, 1]])
+range_3 = np.array([[low_x, hi_x], [0.7, 1]])
 
+# for maximum color values
+p1 = plt.hist2d(x, y, bins=bins, range=range_1, density=False, cmin=1)
+vmin1, vmax1 = p1[-1].get_clim()
+p2 = plt.hist2d(x2, y2, bins=bins, range=range_1, density=False, cmin=1)
+vmin2, vmax2 = p2[-1].get_clim()
+max1 = np.max([vmax1, vmax2])
+min1 = np.min([vmin1, vmin2])
+
+p3 = plt.hist2d(x3, y3, bins=bins, range=range_2, density=False, cmin=1)
+vmin1, vmax1 = p3[-1].get_clim()
+p4 = plt.hist2d(x4, y4, bins=bins, range=range_2, density=False, cmin=1)
+vmin2, vmax2 = p4[-1].get_clim()
+max2 = np.max([vmax1, vmax2])
+min2 = np.min([vmin1, vmin2])
+
+p5 = plt.hist2d(x5, y5, bins=bins, range=range_3, density=False, cmin=1)
+vmin1, vmax1 = p5[-1].get_clim()
+p6 = plt.hist2d(x6, y6, bins=bins, range=range_3, density=False, cmin=1)
+vmin2, vmax2 = p6[-1].get_clim()
+max3 = np.max([vmax1, vmax2])
+min3 = np.min([vmin1, vmin2])
+plt.clf()
+
+# the big boi
+fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(12, 15),dpi=100)
 plt.subplot(3,2,1)
-plt.scatter(x, y, 
-            c = z1,
-            vmin=min_z1,
-            vmax=max_z1,
-            cmap=cMAP,
-            s=m_size,
-            alpha=0.95,
-            rasterized=True,
-            label = r'$\textsc{Scarlet}2$')
-#plt.hist2d(x, y, bins=200, cmap='cmr.iceburn', density=False)
+plt.hist2d(x, y, [bins, bins], range=range_1, cmap=cMAP, density=False, cmin=1, vmin=min1, vmax=max1)
 plt.hlines(0, -100, 100, color='r', linestyle='--',linewidth=2.5)
 plt.xlim(low_x, hi_x)
 plt.ylim(-.82, .82)
@@ -578,15 +530,7 @@ plt.ylabel('(model - true) / true',fontsize=25)
 
 # now scarlet 2
 plt.subplot(3,2,2)
-im1 = plt.scatter(x2, y2, 
-            c = z2, 
-            vmin=min_z1,
-            vmax=max_z1,
-            cmap=cMAP,
-            s=m_size,
-            alpha=0.95,
-            rasterized=True,
-            label = r'$\textsc{Scarlet}2$')
+im1 = plt.hist2d(x2, y2, [bins,bins], range=range_1, cmap=cMAP, density=False, cmin=1, vmin=min1, vmax=max1)
 plt.hlines(0, -100, 100, color='r', linestyle='--',linewidth=2.5)
 plt.ylim(-.82, .82)
 plt.text(5.6, 0.6, r'$\textsc{Scarlet}2$', fontsize=21, color='k')
@@ -597,15 +541,7 @@ plt.yticks(fontsize=0)
 
 plt.subplot(3,2,3)
 plt.hlines(1, -100, 100, color='r', linestyle='--',linewidth=2.5)
-plt.scatter(x3, y3, 
-            c = z3, 
-            vmin=min_z2,
-            vmax=max_z2,
-            cmap=cMAP,
-            s=m_size,
-            alpha=0.95,
-            rasterized=True,
-            label = r'$\textsc{Scarlet}2$')
+plt.hist2d(x3, y3, [bins,bins], range=range_2, cmap=cMAP, density=False, cmin=1, vmin=min2, vmax=max2)
 plt.xlim(low_x, hi_x)
 plt.ylim(.73, 1.03)
 plt.xticks(fontsize=14)
@@ -619,15 +555,7 @@ plt.subplot(3,2,4)
 plt.hlines(1, -100, 100, color='r', linestyle='--',linewidth=2.5)
 plt.yticks(fontsize=0)
 plt.xticks(fontsize=14)
-im2 = plt.scatter(x4, y4, 
-            c = z4, 
-            vmin=min_z2,
-            vmax=max_z2,
-            cmap=cMAP,
-            s=m_size,
-            alpha=0.95,
-            rasterized=True,
-            label = r'$\textsc{Scarlet}2$')
+im2 = plt.hist2d(x4, y4, [bins,bins], range=range_2, cmap=cMAP, density=False, cmin=1, vmin=min2, vmax=max2)
 plt.ylim(.73, 1.03)
 plt.xlim(low_x, hi_x)
 plt.xticks(fontsize=0)
@@ -635,15 +563,7 @@ plt.xticks(fontsize=0)
 
 plt.subplot(3,2,5)
 plt.hlines(1, -100, 100, color='r', linestyle='--',linewidth=2.5)
-plt.scatter(x5, y5, 
-            c = z5, 
-            vmin=min_z3,
-            vmax=max_z3,
-            cmap=cMAP,
-            s=m_size,
-            alpha=0.95,
-            rasterized=True,
-            label = r'$\textsc{Scarlet}2$')
+plt.hist2d(x5, y5, [bins,bins], range=range_3, cmap=cMAP, density=False, cmin=1, vmin=min3, vmax=max3)
 plt.xlim(low_x, hi_x)
 plt.ylim(.71, 1.03)
 plt.xticks(fontsize=14)
@@ -656,31 +576,23 @@ plt.subplot(3,2,6)
 plt.hlines(1, -100, 100, color='r', linestyle='--',linewidth=2.5)
 plt.yticks(fontsize=0)
 plt.xticks(fontsize=14)
-im3 = plt.scatter(x6, y6, 
-            c = z6, 
-            vmin=min_z3,
-            vmax=max_z3,
-            cmap=cMAP,
-            s=m_size,
-            alpha=0.95,
-            rasterized=True,
-            label = r'$\textsc{Scarlet}2$')
+im3 = plt.hist2d(x6, y6, [bins,bins], range=range_3, cmap=cMAP, density=False, cmin=1, vmin=min3, vmax=max3)
 plt.ylim(.71, 1.03)
 plt.xlim(low_x, hi_x)
 plt.xlabel(r'$\log_{10}$(true flux)',fontsize=24)
 
 plt.subplots_adjust(wspace=.0, hspace=.08)
-#plt.colorbar(im, orientation="vertical",fraction=0.07,anchor=(5.0,0.0))
+#plt.colorbar(im3[3], orientation="vertical",fraction=0.07,anchor=(5.0,0.0))
 cbar_ax = fig.add_axes([0.9, 0.11, 0.02, 0.2438])
-cbar = plt.colorbar(im3, cax=cbar_ax)
+cbar = plt.colorbar(im3[3], cax=cbar_ax)
 cbar.set_label(r'number of sources',fontsize=24)
 
 cbar_ax2 = fig.add_axes([0.9, 0.373, 0.02, 0.2438])
-cbar2 = plt.colorbar(im2, cax=cbar_ax2)
+cbar2 = plt.colorbar(im2[3], cax=cbar_ax2)
 cbar2.set_label(r'number of sources',fontsize=24)
 
 cbar_ax2 = fig.add_axes([0.9, 0.6363, 0.02, 0.2438])
-cbar2 = plt.colorbar(im1, cax=cbar_ax2)
+cbar2 = plt.colorbar(im1[3], cax=cbar_ax2)
 cbar2.set_label(r'number of sources',fontsize=24)
 
 prior = 'HSC'
@@ -691,45 +603,73 @@ plt.savefig(name2, bbox_inches='tight',dpi=200)
 
 PREFIX = '/Users/mattsampson/Research/Melchior/scarlet_development/'
 NAME   = 'metrics_batch_' + str(batch_num) + 'specWeight_'+ str(spec_weight) + '_nTrials_' + str(num_trials)
-
-np.save(PREFIX + NAME + 'x.npy', x, allow_pickle=True)
-np.save(PREFIX + NAME + 'y.npy', y , allow_pickle=True)
-np.save(PREFIX + NAME + 'z1.npy', z1, allow_pickle=True)
-np.save(PREFIX + NAME + 'bz1.npy', bz1, allow_pickle=True)
-np.save(PREFIX + NAME + 'x2.npy', x2, allow_pickle=True)
-np.save(PREFIX + NAME + 'y2.npy', y2 , allow_pickle=True)
-np.save(PREFIX + NAME + 'z2.npy', z2, allow_pickle=True)
-np.save(PREFIX + NAME + 'bz2.npy', bz2, allow_pickle=True)
-np.save(PREFIX + NAME + 'x3.npy', x3, allow_pickle=True)
-np.save(PREFIX + NAME + 'y3.npy', y3 , allow_pickle=True)
-np.save(PREFIX + NAME + 'z3.npy', z3, allow_pickle=True)
-np.save(PREFIX + NAME + 'bz3.npy', bz3, allow_pickle=True)
-np.save(PREFIX + NAME + 'x4.npy', x4, allow_pickle=True)
-np.save(PREFIX + NAME + 'y4.npy', y4 , allow_pickle=True)
-np.save(PREFIX + NAME + 'z4.npy', z4, allow_pickle=True)
-np.save(PREFIX + NAME + 'bz4.npy', bz4, allow_pickle=True)
+np.save(PREFIX + NAME + '_x.npy', x, allow_pickle=True)
+np.save(PREFIX + NAME + '_y.npy', y , allow_pickle=True)
+np.save(PREFIX + NAME + '_x2.npy', x2, allow_pickle=True)
+np.save(PREFIX + NAME + '_y2.npy', y2 , allow_pickle=True)
+np.save(PREFIX + NAME + '_x3.npy', x3, allow_pickle=True)
+np.save(PREFIX + NAME + '_y3.npy', y3 , allow_pickle=True)
+np.save(PREFIX + NAME + '_x4.npy', x4, allow_pickle=True)
+np.save(PREFIX + NAME + '_y4.npy', y4 , allow_pickle=True)
+np.save(PREFIX + NAME + '_x5.npy', x5, allow_pickle=True)
+np.save(PREFIX + NAME + '_y5.npy', y5 , allow_pickle=True)
+np.save(PREFIX + NAME + '_x6.npy', x6, allow_pickle=True)
+np.save(PREFIX + NAME + '_y6.npy', y6 , allow_pickle=True)
+np.save(PREFIX + NAME + '_b1.npy', b1 , allow_pickle=True)
+np.save(PREFIX + NAME + '_b2.npy', b2 , allow_pickle=True)
+np.save(PREFIX + NAME + '_b3.npy', b3 , allow_pickle=True)
+np.save(PREFIX + NAME + '_b4.npy', b4 , allow_pickle=True)
+np.save(PREFIX + NAME + '_b5.npy', b5 , allow_pickle=True)
+np.save(PREFIX + NAME + '_b6.npy', b6 , allow_pickle=True)
 
 
 # ------------------------------------------------------- #
 # plot 2: error metrics as a function of true blendedness #
 # ------------------------------------------------------- #
-fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(12, 15),dpi=100)
-cMAP = 'cmr.iceburn'
 m_size = 20
 low_x = -0.05
 hi_x = 1.05
 
+# range for hists
+range_1 = np.array([[low_x, hi_x], [-0.82, 0.82]])
+range_2 = np.array([[low_x, hi_x], [0.7, 1]])
+range_3 = np.array([[low_x, hi_x], [0.7, 1]])
+
+# for maximum color values
+p1 = plt.hist2d(b1, y, bins=bins, range=range_1, density=False, cmin=1)
+vmin1, vmax1 = p1[-1].get_clim()
+p2 = plt.hist2d(b2, y2, bins=bins, range=range_1, density=False, cmin=1)
+vmin2, vmax2 = p2[-1].get_clim()
+max1 = np.max([vmax1, vmax2])
+min1 = np.min([vmin1, vmin2])
+
+p3 = plt.hist2d(b3, y3, bins=bins, range=range_2, density=False, cmin=1)
+vmin1, vmax1 = p3[-1].get_clim()
+p4 = plt.hist2d(b4, y4, bins=bins, range=range_2, density=False, cmin=1)
+vmin2, vmax2 = p4[-1].get_clim()
+max2 = np.max([vmax1, vmax2])
+min2 = np.min([vmin1, vmin2])
+
+p5 = plt.hist2d(b5, y5, bins=bins, range=range_3, density=False, cmin=1)
+vmin1, vmax1 = p5[-1].get_clim()
+p6 = plt.hist2d(b6, y6, bins=bins, range=range_3, density=False, cmin=1)
+vmin2, vmax2 = p6[-1].get_clim()
+max3 = np.max([vmax1, vmax2])
+min3 = np.min([vmin1, vmin2])
+plt.clf()
+
+fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(12, 15),dpi=100)
 plt.subplot(3,2,1)
-plt.scatter(b1, y, 
-            c = bz1, 
-            vmin=min_bz1,
-            vmax=max_bz1,
-            cmap=cMAP,
-            s=m_size,
-            alpha=0.95,
-            rasterized=True,
-            label = r'$\textsc{Scarlet}2$')
-#plt.hist2d(x, y, bins=200, cmap='cmr.iceburn', density=False)
+# plt.scatter(b1, y, 
+#             c = bz1, 
+#             vmin=min_bz1,
+#             vmax=max_bz1,
+#             cmap=cMAP,
+#             s=m_size,
+#             alpha=0.95,
+#             rasterized=True,
+#             label = r'$\textsc{Scarlet}2$')
+plt.hist2d(b1, y, [bins,bins], range=range_1, cmap=cMAP, density=False, cmin=1, vmin=min1, vmax=max1)
 plt.hlines(0, -100, 100, color='r', linestyle='--',linewidth=2.5)
 plt.xlim(low_x, hi_x)
 plt.ylim(-.82, .82)
@@ -741,15 +681,16 @@ plt.ylabel('(model - true) / true',fontsize=25)
 
 # now scarlet 2
 plt.subplot(3,2,2)
-im1 = plt.scatter(b2, y2, 
-            c = bz2, 
-            vmin=min_bz1,
-            vmax=max_bz1,
-            cmap=cMAP,
-            s=m_size,
-            alpha=0.95,
-            rasterized=True,
-            label = r'$\textsc{Scarlet}2$')
+# im1 = plt.scatter(b2, y2, 
+#             c = bz2, 
+#             vmin=min_bz1,
+#             vmax=max_bz1,
+#             cmap=cMAP,
+#             s=m_size,
+#             alpha=0.95,
+#             rasterized=True,
+#             label = r'$\textsc{Scarlet}2$')
+im1 = plt.hist2d(b2, y2, [bins,bins], range=range_1, cmap=cMAP, density=False, cmin=1, vmin=min1, vmax=max1)
 plt.hlines(0, -100, 100, color='r', linestyle='--',linewidth=2.5)
 plt.ylim(-.82, .82)
 plt.text(0.03, 0.6, r'$\textsc{Scarlet}2$', fontsize=21, color='k')
@@ -760,15 +701,16 @@ plt.yticks(fontsize=0)
 
 plt.subplot(3,2,3)
 plt.hlines(1, -100, 100, color='r', linestyle='--',linewidth=2.5)
-plt.scatter(b3, y3, 
-            c = bz3, 
-            vmin=min_bz2,
-            vmax=max_bz2,
-            cmap=cMAP,
-            s=m_size,
-            alpha=0.95,
-            rasterized=True,
-            label = r'$\textsc{Scarlet}2$')
+# plt.scatter(b3, y3, 
+#             c = bz3, 
+#             vmin=min_bz2,
+#             vmax=max_bz2,
+#             cmap=cMAP,
+#             s=m_size,
+#             alpha=0.95,
+#             rasterized=True,
+#             label = r'$\textsc{Scarlet}2$')
+plt.hist2d(b3, y3, [bins,bins], range=range_2, cmap=cMAP, density=False, cmin=1, vmin=min2, vmax=max2)
 plt.xlim(low_x, hi_x)
 plt.ylim(.73, 1.03)
 plt.xticks(fontsize=0)
@@ -781,15 +723,16 @@ plt.subplot(3,2,4)
 plt.hlines(1, -100, 100, color='r', linestyle='--',linewidth=2.5)
 plt.yticks(fontsize=0)
 plt.xticks(fontsize=14)
-im2 = plt.scatter(b4, y4, 
-            c = bz4, 
-            vmin=min_bz2,
-            vmax=max_bz2,
-            cmap=cMAP,
-            s=m_size,
-            alpha=0.95,
-            rasterized=True,
-            label = r'$\textsc{Scarlet}2$')
+# im2 = plt.scatter(b4, y4, 
+#             c = bz4, 
+#             vmin=min_bz2,
+#             vmax=max_bz2,
+#             cmap=cMAP,
+#             s=m_size,
+#             alpha=0.95,
+#             rasterized=True,
+#             label = r'$\textsc{Scarlet}2$')
+im2 = plt.hist2d(b4, y4, [bins,bins], range=range_2, cmap=cMAP, density=False, cmin=1, vmin=min2, vmax=max2)
 plt.ylim(.73, 1.03)
 plt.xlim(low_x, hi_x)
 plt.xticks(fontsize=0)
@@ -797,15 +740,16 @@ plt.xticks(fontsize=0)
 
 plt.subplot(3,2,5)
 plt.hlines(1, -100, 100, color='r', linestyle='--',linewidth=2.5)
-plt.scatter(b5, y5, 
-            c = bz5, 
-            vmin=min_bz3,
-            vmax=max_bz3,
-            cmap=cMAP,
-            s=m_size,
-            alpha=0.95,
-            rasterized=True,
-            label = r'$\textsc{Scarlet}2$')
+# plt.scatter(b5, y5, 
+#             c = bz5, 
+#             vmin=min_bz3,
+#             vmax=max_bz3,
+#             cmap=cMAP,
+#             s=m_size,
+#             alpha=0.95,
+#             rasterized=True,
+#             label = r'$\textsc{Scarlet}2$')
+plt.hist2d(b5, y5, [bins,bins], range=range_3, cmap=cMAP, density=False, cmin=1, vmin=min3, vmax=max3)
 plt.xlim(low_x, hi_x)
 plt.ylim(.71, 1.03)
 plt.xticks(fontsize=14)
@@ -818,15 +762,16 @@ plt.subplot(3,2,6)
 plt.hlines(1, -100, 100, color='r', linestyle='--',linewidth=2.5)
 plt.yticks(fontsize=0)
 plt.xticks(fontsize=14)
-im3 = plt.scatter(b6, y6, 
-            c = bz6, 
-            vmin=min_bz3,
-            vmax=max_bz3,
-            cmap=cMAP,
-            s=m_size,
-            alpha=0.95,
-            rasterized=True,
-            label = r'$\textsc{Scarlet}2$')
+# im3 = plt.scatter(b6, y6, 
+#             c = bz6, 
+#             vmin=min_bz3,
+#             vmax=max_bz3,
+#             cmap=cMAP,
+#             s=m_size,
+#             alpha=0.95,
+#             rasterized=True,
+#             label = r'$\textsc{Scarlet}2$')
+im3 = plt.hist2d(b6, y6, [bins,bins], range=range_3, cmap=cMAP, density=False, cmin=1, vmin=min3, vmax=max3)
 plt.ylim(.71, 1.03)
 plt.xlim(low_x, hi_x)
 plt.xlabel(r'blendedness',fontsize=24)
@@ -834,15 +779,15 @@ plt.xlabel(r'blendedness',fontsize=24)
 plt.subplots_adjust(wspace=.0, hspace=.08)
 #plt.colorbar(im, orientation="vertical",fraction=0.07,anchor=(5.0,0.0))
 cbar_ax = fig.add_axes([0.9, 0.11, 0.02, 0.2438])
-cbar = plt.colorbar(im3, cax=cbar_ax)
+cbar = plt.colorbar(im3[3], cax=cbar_ax)
 cbar.set_label(r'number of sources',fontsize=24)
 
 cbar_ax2 = fig.add_axes([0.9, 0.373, 0.02, 0.2438])
-cbar2 = plt.colorbar(im2, cax=cbar_ax2)
+cbar2 = plt.colorbar(im2[3], cax=cbar_ax2)
 cbar2.set_label(r'number of sources',fontsize=24)
 
 cbar_ax2 = fig.add_axes([0.9, 0.6363, 0.02, 0.2438])
-cbar2 = plt.colorbar(im1, cax=cbar_ax2)
+cbar2 = plt.colorbar(im1[3], cax=cbar_ax2)
 cbar2.set_label(r'number of sources',fontsize=24)
 
 name = 'flux_' + str(prior) + '_blended_specWeight_' + str(spec_weight) + '_nTrials_' + str(num_trials) + '.pdf'
